@@ -101,12 +101,9 @@ public class DeleteProcessInstancesJobHandler extends AbstractBatchJobHandler<De
 
     DeleteProcessInstanceBatchConfiguration batchConfiguration = readConfiguration(configurationEntity.getBytes());
 
-    for (String pi : batchConfiguration.getProcessInstanceIds()) {
-      commandContext.getProcessEngineConfiguration()
-          .getRuntimeService()
-          .deleteProcessInstance(pi,batchConfiguration.deleteReason,true,true);
-    }
-
+    commandContext.getProcessEngineConfiguration()
+            .getRuntimeService()
+            .deleteProcessInstances(batchConfiguration.getProcessInstanceIds(),batchConfiguration.deleteReason,true,true);
 
     commandContext.getByteArrayManager().delete(configurationEntity);
   }

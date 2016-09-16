@@ -24,10 +24,13 @@ import org.junit.rules.ExpectedException;
 import org.junit.rules.RuleChain;
 
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
 
 import static org.hamcrest.core.Is.is;
 import static org.hamcrest.core.StringStartsWith.startsWith;
 import static org.junit.Assert.assertThat;
+import static org.junit.Assert.fail;
 
 /**
  * @author Askar Akhmerov
@@ -101,6 +104,49 @@ public class DeleteProcessInstancesBatchAuthorizationTest {
     //testHelper.executeAvailableJobs(); throws stack overflow exception due to job failure
     for (Job existing : engineRule.getManagementService().createJobQuery().list()) {
       engineRule.getManagementService().executeJob(existing.getId());
+    }
+  }
+
+  @Test
+  public void testBatchDeleteWithPartialPermissionsAuthorizations() {
+    ProcessDefinition sourceDefinition = testHelper.deployAndGetDefinition(ProcessModels.ONE_TASK_PROCESS);
+    ProcessInstance processInstance2 = engineRule.getRuntimeService().startProcessInstanceById(sourceDefinition.getId());
+
+
+
+    engineRule.getProcessEngineConfiguration().setInvocationsPerBatchJob(2);
+    authRule.createGrantAuthorization(Resources.BATCH, "*", "user", Permissions.CREATE);
+    // give permissions to operate on first process instance only
+    authRule.createGrantAuthorization(Resources.PROCESS_INSTANCE, processInstance.getId(), "user", Permissions.ALL);
+    // when
+    authRule.enableAuthorization("user");
+
+    List<String> processInstanceIds = Arrays.asList(processInstance.getId(), processInstance2.getId());
+
+    engineRule.getRuntimeService().deleteProcessInstancesAsync(
+            processInstanceIds,TEST_REASON);
+    engineRule.getManagementService().executeJob(
+            engineRule.getManagementService().createJobQuery().singleResult().getId());
+    assertThat(engineRule.getManagementService().createJobQuery().active().count(),is(2l));
+
+    try {
+      for (Job pending : engineRule.getManagementService().createJobQuery().list()) {
+        engineRule.getManagementService().executeJob(pending.getId());
+      }
+      fail("one job should fail due to lacking permissions on process instance");
+    } catch (Exception e) {
+      //expected
+    }
+
+    authRule.disableAuthorization();
+    authRule.deleteUsersAndGroups();
+
+    assertThat(
+            engineRule.getRuntimeService().createProcessInstanceQuery().processInstanceIds(
+                    new HashSet<String>(processInstanceIds)).count(),is(2l));
+
+    if(ProcessEngineConfiguration.HISTORY_FULL.equals(engineRule.getProcessEngineConfiguration().getHistory())  ) {
+      assertThat(engineRule.getHistoryService().createUserOperationLogQuery().count(), is(3l));
     }
   }
 
